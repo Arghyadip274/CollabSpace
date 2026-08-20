@@ -13,7 +13,7 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: collabspace-redis
           property: connectionString
       - key: JWT_SECRET
@@ -21,7 +21,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
 
-  - type: redis
+  - type: keyvalue
     name: collabspace-redis
     region: oregon
     plan: free
