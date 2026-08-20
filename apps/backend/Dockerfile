@@ -4,7 +4,7 @@ WORKDIR /app
 
 # System deps for asyncpg / bcrypt
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev curl \
+    gcc libpq-dev curl openssl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy all backend source
@@ -18,4 +18,4 @@ RUN prisma generate
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "prisma db push --accept-data-loss && uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+CMD ["sh", "-c", "prisma db push --accept-data-loss && uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1"]
