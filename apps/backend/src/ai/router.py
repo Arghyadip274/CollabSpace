@@ -192,7 +192,7 @@ class SearchRequest(BaseModel):
 @router.post("/search")
 async def semantic_search(
     req: SearchRequest,
-    current_user: UserProfile = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_user),
 ):
     # Check workspace access
     member = await db.workspacemember.find_unique(
