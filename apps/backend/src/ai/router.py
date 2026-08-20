@@ -21,7 +21,7 @@ class DocSummarizeRequest(BaseModel):
 @router.post("/document/{doc_id}/summarize")
 async def summarize_document(
     doc_id: str,
-    req: DocSummarizeRequest = None,
+    req: DocSummarizeRequest | None = None,
     current_user: UserResponse = Depends(get_current_user),
 ):
     # Verify access
@@ -32,7 +32,7 @@ async def summarize_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
         
-    is_member = any(m.userId == current_user.id for m in doc.workspace.members)
+    is_member = bool(doc.workspace and doc.workspace.members and any(m.userId == current_user.id for m in doc.workspace.members))
     if not is_member:
         raise HTTPException(status_code=403, detail="Not a workspace member")
         
@@ -78,7 +78,7 @@ async def summarize_channel(
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
         
-    is_member = any(m.userId == current_user.id for m in channel.workspace.members)
+    is_member = bool(channel.workspace and channel.workspace.members and any(m.userId == current_user.id for m in channel.workspace.members))
     if not is_member:
         raise HTTPException(status_code=403, detail="Not a workspace member")
         
