@@ -1,11 +1,11 @@
 services:
   - type: web
     name: collabspace-backend
-    env: docker
+    runtime: docker
     region: oregon
     plan: free
-    dockerContext: apps/backend
-    dockerfilePath: apps/backend/Dockerfile
+    dockerContext: ./apps/backend
+    dockerfilePath: ./apps/backend/Dockerfile
     envVars:
       - key: DATABASE_URL
         fromDatabase:
