@@ -5,11 +5,11 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://collabspace-backend-ycjg.onrender.com/$1"
+      "destination": "https://collabspace-backend-c26l.onrender.com/$1"
     },
     {
       "source": "/realtime/(.*)",
-      "destination": "https://collabspace-backend-ycjg.onrender.com/realtime/$1"
+      "destination": "https://collabspace-backend-c26l.onrender.com/realtime/$1"
     },
     {
       "source": "/(.*)",
