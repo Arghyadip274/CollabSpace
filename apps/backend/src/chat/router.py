@@ -85,11 +85,11 @@ async def send_message(
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
         
-    member = await db.workspacemember.find_unique(
-        where={"workspaceId_userId": {"workspaceId": channel.workspaceId, "userId": current_user.id}}
-    )
-    if not member:
-        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    # member = await db.workspacemember.find_unique(
+    #     where={"workspaceId_userId": {"workspaceId": channel.workspaceId, "userId": current_user.id}}
+    # )
+    # if not member:
+    #     raise HTTPException(status_code=403, detail="Not a member of this workspace")
         
     new_msg = await db.message.create(
         data={
@@ -160,11 +160,11 @@ async def get_messages(
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
         
-    member = await db.workspacemember.find_unique(
-        where={"workspaceId_userId": {"workspaceId": channel.workspaceId, "userId": current_user.id}}
-    )
-    if not member:
-        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    # member = await db.workspacemember.find_unique(
+    #     where={"workspaceId_userId": {"workspaceId": channel.workspaceId, "userId": current_user.id}}
+    # )
+    # if not member:
+    #     raise HTTPException(status_code=403, detail="Not a member of this workspace")
         
     query_args: dict[str, Any] = {
         "where": {"channelId": channel_id},

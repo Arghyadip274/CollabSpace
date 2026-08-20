@@ -536,6 +536,29 @@ function App() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Join another user's channel */}
+                  <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px', marginTop: '16px' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600 }}>
+                      💬 Join a Colleague's Chat (Paste their Channel ID below)
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        className="input-field"
+                        value={channelId}
+                        onChange={e => setChannelId(e.target.value)}
+                        placeholder="Paste Channel ID here..."
+                      />
+                      <button
+                        className="btn-primary"
+                        style={{ whiteSpace: 'nowrap' }}
+                        disabled={!channelId.trim()}
+                        onClick={() => { setActiveTab('chat'); }}
+                      >
+                        Join Chat
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
