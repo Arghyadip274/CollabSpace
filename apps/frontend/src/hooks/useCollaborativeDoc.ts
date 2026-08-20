@@ -59,7 +59,7 @@ export function useCollaborativeDoc(
     setWsStatus('Connecting...');
     // Vercel does not support WebSocket proxying via vercel.json.
     // In production, we must connect directly to the Render backend.
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = (import.meta as any).env.VITE_BACKEND_URL;
     let wsUrl;
     if (backendUrl) {
       // e.g. VITE_BACKEND_URL = "https://collabspace-backend-c26l.onrender.com"
