@@ -42,13 +42,25 @@ function App() {
   const [channelName, setChannelName] = useState<string>('general');
 
   // Real-time collaborative doc hook (Yjs over WebSocket)
-  const { docText, setDocText, wsStatus, onlineCount, manualSave, saveStatus, setSaveStatus } =
-    useCollaborativeDoc(docId, workspaceId, token);
+  const { docText, setDocText, wsStatus, onlineCount, manualSave, saveStatus, setSaveStatus, latestMessage } =
+    useCollaborativeDoc(docId, workspaceId, channelId, token);
 
   // Real-time Chat States
   const [messages, setMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (latestMessage) {
+      setMessages(prev => {
+        // Prevent duplicate messages
+        if (prev.some(m => m.id === latestMessage.id)) return prev;
+        return [...prev, latestMessage];
+      });
+      // Scroll to bottom
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }
+  }, [latestMessage]);
 
   // AI Feature States
   const [docSummary, setDocSummary] = useState<string>('');

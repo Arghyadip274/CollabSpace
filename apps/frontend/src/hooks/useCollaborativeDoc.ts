@@ -11,6 +11,7 @@ interface UseCollaborativeDocResult {
   manualSave: () => Promise<void>;
   saveStatus: string;
   setSaveStatus: (s: string) => void;
+  latestMessage?: any;
 }
 
 const uint8ToBase64 = (buf: Uint8Array): string => {
@@ -29,6 +30,7 @@ const base64ToUint8 = (b64: string): Uint8Array => {
 export function useCollaborativeDoc(
   docId: string,
   workspaceId: string,
+  channelId: string,
   token: string
 ): UseCollaborativeDocResult {
   const wsRef = useRef<WebSocket | null>(null);
@@ -39,9 +41,10 @@ export function useCollaborativeDoc(
   const [wsStatus, setWsStatus] = useState<WsStatus>('Disconnected');
   const [onlineCount, setOnlineCount] = useState(1);
   const [saveStatus, setSaveStatus] = useState('Saved');
+  const [latestMessage, setLatestMessage] = useState<any>(null);
 
   useEffect(() => {
-    if (!docId || !token) return;
+    if (!token) return;
 
     if (wsRef.current) {
       wsRef.current.onmessage = null;
@@ -57,16 +60,12 @@ export function useCollaborativeDoc(
     ytext.observe(observer);
 
     setWsStatus('Connecting...');
-    // Vercel does not support WebSocket proxying via vercel.json.
-    // In production, we must connect directly to the Render backend.
     const backendUrl = (import.meta as any).env.VITE_BACKEND_URL;
     let wsUrl;
     if (backendUrl) {
-      // e.g. VITE_BACKEND_URL = "https://collabspace-backend-c26l.onrender.com"
       const wsHost = backendUrl.replace(/^http/, 'ws');
       wsUrl = `${wsHost}/realtime/ws?token=${encodeURIComponent(token)}`;
     } else {
-      // Fallback for local development using Vite proxy
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       wsUrl = `${wsProtocol}//${window.location.host}/realtime/ws?token=${encodeURIComponent(token)}`;
     }
@@ -75,7 +74,12 @@ export function useCollaborativeDoc(
 
     ws.onopen = () => {
       setWsStatus('Live');
-      ws.send(JSON.stringify({ type: 'join_room', room_id: docId }));
+      if (docId) {
+        ws.send(JSON.stringify({ type: 'join_room', room_id: docId }));
+      }
+      if (channelId) {
+        ws.send(JSON.stringify({ type: 'join_room', room_id: `channel_${channelId}` }));
+      }
     };
 
     ws.onmessage = (event) => {
@@ -105,6 +109,10 @@ export function useCollaborativeDoc(
           setOnlineCount(prev =>
             msg.status === 'online' ? Math.min(prev + 1, 99) : Math.max(prev - 1, 1)
           );
+        }
+
+        if (msg.type === 'new_message' && msg.message) {
+          setLatestMessage(msg.message);
         }
       } catch {}
     };
@@ -139,7 +147,7 @@ export function useCollaborativeDoc(
       ws.close();
       ydoc.destroy();
     };
-  }, [docId, token, workspaceId]);
+  }, [docId, token, workspaceId, channelId]);
 
   const setDocText = useCallback((newText: string) => {
     const ydoc = ydocRef.current;
@@ -168,5 +176,5 @@ export function useCollaborativeDoc(
     }
   }, [docId, token, workspaceId]);
 
-  return { docText, setDocText, wsStatus, onlineCount, manualSave, saveStatus, setSaveStatus };
+  return { docText, setDocText, wsStatus, onlineCount, manualSave, saveStatus, setSaveStatus, latestMessage };
 }
