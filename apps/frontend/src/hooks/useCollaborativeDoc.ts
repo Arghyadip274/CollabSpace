@@ -57,9 +57,19 @@ export function useCollaborativeDoc(
     ytext.observe(observer);
 
     setWsStatus('Connecting...');
-    // Use relative path so it goes through Vite's WebSocket proxy → backend
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/realtime/ws?token=${encodeURIComponent(token)}`;
+    // Vercel does not support WebSocket proxying via vercel.json.
+    // In production, we must connect directly to the Render backend.
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    let wsUrl;
+    if (backendUrl) {
+      // e.g. VITE_BACKEND_URL = "https://collabspace-backend-c26l.onrender.com"
+      const wsHost = backendUrl.replace(/^http/, 'ws');
+      wsUrl = `${wsHost}/realtime/ws?token=${encodeURIComponent(token)}`;
+    } else {
+      // Fallback for local development using Vite proxy
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${wsProtocol}//${window.location.host}/realtime/ws?token=${encodeURIComponent(token)}`;
+    }
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
