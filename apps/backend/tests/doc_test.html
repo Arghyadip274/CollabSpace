@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Document Test</title>
+    <script src="https://unpkg.com/yjs@13.6.14/dist/yjs.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f7f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { padding: 10px 15px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        textarea { width: 100%; height: 200px; padding: 10px; font-family: monospace; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+        .status { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .status.disconnected { background: #ffebee; color: #c62828; }
+        .status.connected { background: #e8f5e9; color: #2e7d32; }
+        .flex { display: flex; gap: 10px; }
+        .flex > * { flex: 1; }
+        #logs { height: 150px; overflow-y: auto; background: #eee; padding: 10px; font-size: 12px; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+    <h1>Phase 3: Collaborative Document Test</h1>
+    
+    <div class="card">
+        <div class="flex">
+            <div>
+                <div class="form-group">
+                    <label>Server Port</label>
+                    <input type="text" id="port" value="8000">
+                </div>
+                <div class="form-group">
+                    <label>JWT Token</label>
+                    <input type="text" id="token" placeholder="JWT Token">
+                </div>
+            </div>
+            <div>
+                <div class="form-group">
+                    <label>Document (Room) ID</label>
+                    <input type="text" id="roomId" value="doc_123">
+                </div>
+                <div style="margin-top: 25px;">
+                    <button id="connectBtn">Connect</button>
+                    <span id="status" class="status disconnected">DISCONNECTED</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <label>Document Editor</label>
+        <!-- A simple textarea. In a real app we'd use a binding library for ProseMirror/Quill -->
+        <textarea id="editor" disabled placeholder="Connect to start typing..."></textarea>
+    </div>
+
+    <div class="card">
+        <label>System Logs</label>
+        <div id="logs"></div>
+    </div>
+
+    <script type="module">
+        import * as Y from "https://cdn.jsdelivr.net/npm/yjs@13.6.14/+esm";
+        
+        let ws = null;
+        let ydoc = new Y.Doc();
+        let ytext = ydoc.getText('monaco'); // Arbitrary name for the text type
+        
+        const editor = document.getElementById('editor');
+        const connectBtn = document.getElementById('connectBtn');
+        const statusEl = document.getElementById('status');
+        const logsEl = document.getElementById('logs');
+        
+        let isLocalChange = false;
+
+        function log(msg) {
+            const el = document.createElement('div');
+            el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logsEl.appendChild(el);
+            logsEl.scrollTop = logsEl.scrollHeight;
+        }
+
+        // Utility: Uint8Array to Base64
+        function fromUint8Array(array) {
+            let binary = '';
+            for (let i = 0; i < array.byteLength; i++) {
+                binary += String.fromCharCode(array[i]);
+            }
+            return btoa(binary);
+        }
+
+        // Utility: Base64 to Uint8Array
+        function toUint8Array(b64) {
+            const binary = atob(b64);
+            const array = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                array[i] = binary.charCodeAt(i);
+            }
+            return array;
+        }
+
+        // 1. Observe changes in the Yjs Document and update the textarea
+        ytext.observe(event => {
+            if (!isLocalChange) {
+                // Update textarea with the current Yjs text state
+                const currentCursor = editor.selectionStart;
+                editor.value = ytext.toString();
+                // Extremely naive cursor restoration
+                editor.setSelectionRange(currentCursor, currentCursor);
+            }
+        });
+
+        // 2. Observe changes in the Yjs Document and broadcast to WebSocket
+        ydoc.on('update', (update, origin) => {
+            if (origin !== 'remote' && ws && ws.readyState === WebSocket.OPEN) {
+                // It was a local change, send it to the server
+                const b64Update = fromUint8Array(update);
+                ws.send(JSON.stringify({
+                    type: "doc_update",
+                    room_id: document.getElementById('roomId').value,
+                    update: b64Update
+                }));
+                log(`Sent local update to server (${b64Update.length} chars)`);
+            }
+        });
+
+        // 3. Listen to Textarea input and sync to Y.Text
+        let lastValue = "";
+        editor.addEventListener('input', () => {
+            isLocalChange = true;
+            
+            const newValue = editor.value;
+            // Extremely naive diffing for demonstration:
+            
+            if (newValue.startsWith(lastValue)) {
+                // Append
+                const appended = newValue.slice(lastValue.length);
+                ytext.insert(lastValue.length, appended);
+            } else if (lastValue.startsWith(newValue)) {
+                // Delete from end
+                ytext.delete(newValue.length, lastValue.length - newValue.length);
+            } else {
+                // Complex change: just replace everything (breaks concurrent cursors, but works for simple demo)
+                ytext.delete(0, ytext.length);
+                ytext.insert(0, newValue);
+            }
+            
+            lastValue = newValue;
+            isLocalChange = false;
+        });
+
+        connectBtn.addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            } else {
+                connect();
+            }
+        });
+
+        function connect() {
+            const port = document.getElementById('port').value;
+            const token = document.getElementById('token').value;
+            const roomId = document.getElementById('roomId').value;
+            
+            if (!token) return alert('Token required');
+
+            const wsUrl = `ws://127.0.0.1:${port}/realtime/ws?token=${token}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                log('Connected to WS');
+                statusEl.className = 'status connected';
+                statusEl.textContent = 'CONNECTED';
+                connectBtn.textContent = 'Disconnect';
+                
+                // Reset local doc state
+                ydoc = new Y.Doc();
+                ytext = ydoc.getText('monaco');
+                
+                // Reattach observer (since we created a new Y.Doc)
+                ytext.observe(event => {
+                    if (!isLocalChange) {
+                        const currentCursor = editor.selectionStart;
+                        editor.value = ytext.toString();
+                        lastValue = editor.value;
+                    }
+                });
+                
+                ydoc.on('update', (update, origin) => {
+                    if (origin !== 'remote' && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: "doc_update",
+                            room_id: roomId,
+                            update: fromUint8Array(update)
+                        }));
+                    }
+                });
+
+                // Join room to trigger sync
+                ws.send(JSON.stringify({ type: 'join_room', room_id: roomId }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'sync_step_1') {
+                    log(`Received initial state with ${data.updates.length} updates`);
+                    // Apply all historical updates
+                    data.updates.forEach(u => {
+                        try {
+                            Y.applyUpdate(ydoc, toUint8Array(u), 'remote');
+                        } catch(e) { log('Failed to apply historical update: ' + e); }
+                    });
+                    editor.disabled = false;
+                    editor.value = ytext.toString();
+                    lastValue = editor.value;
+                }
+                else if (data.type === 'doc_update') {
+                    // Apply real-time update from another client
+                    try {
+                        Y.applyUpdate(ydoc, toUint8Array(data.update), 'remote');
+                        log(`Applied remote update from ${data.sender_id}`);
+                    } catch (e) {
+                        log('Failed to apply remote update: ' + e);
+                    }
+                }
+                else if (data.type === 'ack') {
+                    // Ignore acks to reduce log noise
+                }
+                else {
+                    log(`Received unknown message: ${data.type}`);
+                }
+            };
+
+            ws.onclose = () => {
+                log('Disconnected');
+                statusEl.className = 'status disconnected';
+                statusEl.textContent = 'DISCONNECTED';
+                connectBtn.textContent = 'Connect';
+                editor.disabled = true;
+            };
+        }
+    </script>
+</body>
+</html>

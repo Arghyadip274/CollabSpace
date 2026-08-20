@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Multi-Server Test</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f7f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { padding: 10px 15px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #messages { height: 300px; overflow-y: auto; border: 1px solid #eee; padding: 10px; background: #fafafa; border-radius: 4px; font-family: monospace; font-size: 12px; }
+        .msg { margin-bottom: 5px; padding: 5px; border-radius: 3px; }
+        .msg.sent { background: #e3f2fd; color: #0d47a1; }
+        .msg.recv { background: #e8f5e9; color: #1b5e20; }
+        .msg.sys { background: #fff3e0; color: #e65100; font-style: italic; }
+        .status { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .status.disconnected { background: #ffebee; color: #c62828; }
+        .status.connected { background: #e8f5e9; color: #2e7d32; }
+        .status.connecting { background: #fff8e1; color: #f57f17; }
+        .flex { display: flex; gap: 10px; }
+        .flex > * { flex: 1; }
+    </style>
+</head>
+<body>
+
+    <h1>Real-time Multi-Server Test</h1>
+    
+    <div class="card">
+        <div class="flex">
+            <div>
+                <div class="form-group">
+                    <label>Server Port</label>
+                    <input type="text" id="port" value="8000" placeholder="e.g. 8000 or 8001">
+                </div>
+                <div class="form-group">
+                    <label>JWT Access Token</label>
+                    <input type="text" id="token" placeholder="Paste your JWT access token here">
+                </div>
+                <div class="form-group">
+                    <label>Room ID</label>
+                    <input type="text" id="roomId" value="room1">
+                </div>
+                <button id="connectBtn" onclick="toggleConnection()">Connect</button>
+                <span id="status" class="status disconnected">DISCONNECTED</span>
+            </div>
+            
+            <div>
+                <div class="form-group">
+                    <label>Message</label>
+                    <input type="text" id="messageInput" placeholder="Type a message..." disabled>
+                </div>
+                <button id="sendBtn" onclick="sendMessage()" disabled>Send Message</button>
+                <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                    <strong>Instructions:</strong><br>
+                    1. Run backend on port 8000 (Alice) and 8001 (Bob).<br>
+                    2. Get JWT tokens via /auth/login.<br>
+                    3. Connect Alice to port 8000 on Room 1.<br>
+                    4. Connect Bob to port 8001 on Room 1.<br>
+                    5. Send messages between them.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Logs</h3>
+        <div id="messages"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectAttempts = 0;
+        let isIntentionallyClosed = false;
+        let msgCounter = 1;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const messageInput = document.getElementById('messageInput');
+        const statusEl = document.getElementById('status');
+        const messagesEl = document.getElementById('messages');
+        const roomIdInput = document.getElementById('roomId');
+
+        function log(text, type = 'sys') {
+            const el = document.createElement('div');
+            el.className = `msg ${type}`;
+            const time = new Date().toISOString().split('T')[1].slice(0, -1);
+            el.textContent = `[${time}] ${text}`;
+            messagesEl.appendChild(el);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function updateStatus(state) {
+            statusEl.className = `status ${state}`;
+            statusEl.textContent = state.toUpperCase();
+            
+            const isConnected = state === 'connected';
+            connectBtn.textContent = isConnected ? 'Disconnect' : 'Connect';
+            sendBtn.disabled = !isConnected;
+            messageInput.disabled = !isConnected;
+            
+            if (isConnected) reconnectAttempts = 0;
+        }
+
+        function toggleConnection() {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                isIntentionallyClosed = true;
+                ws.close();
+            } else {
+                isIntentionallyClosed = false;
+                connect();
+            }
+        }
+
+        function connect() {
+            const port = document.getElementById('port').value;
+            const token = document.getElementById('token').value;
+            
+            if (!token) {
+                alert('Please provide a JWT token');
+                return;
+            }
+
+            updateStatus('connecting');
+            log(`Attempting connection to port ${port}...`, 'sys');
+
+            const wsUrl = `ws://127.0.0.1:${port}/realtime/ws?token=${token}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                log('WebSocket Connected!', 'sys');
+                updateStatus('connected');
+                
+                // Join room automatically
+                const room_id = roomIdInput.value;
+                log(`Sending join_room for: ${room_id}`, 'sys');
+                ws.send(JSON.stringify({
+                    type: 'join_room',
+                    room_id: room_id
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'message') {
+                    log(`[Room ${data.room_id}] ${data.sender_name}: ${data.data}`, 'recv');
+                } else if (data.type === 'ack') {
+                    log(`Server ACK: ${data.event}`, 'sys');
+                } else {
+                    log(`Received: ${JSON.stringify(data)}`, 'sys');
+                }
+            };
+
+            ws.onclose = (event) => {
+                updateStatus('disconnected');
+                log(`Connection closed (code: ${event.code}, reason: ${event.reason || 'None'})`, 'sys');
+                
+                if (!isIntentionallyClosed) {
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                    log(`Will attempt reconnect in ${delay}ms...`, 'sys');
+                    reconnectAttempts++;
+                    setTimeout(connect, delay);
+                }
+            };
+
+            ws.onerror = (error) => {
+                log('WebSocket error occurred!', 'sys');
+            };
+        }
+
+        function sendMessage() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            const text = messageInput.value.trim();
+            if (!text) return;
+            
+            const room_id = roomIdInput.value;
+            const payload = {
+                type: 'message',
+                room_id: room_id,
+                data: text,
+                msg_id: `msg_${msgCounter++}`
+            };
+            
+            ws.send(JSON.stringify(payload));
+            log(`Sent: ${text}`, 'sent');
+            messageInput.value = '';
+        }
+
+        messageInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

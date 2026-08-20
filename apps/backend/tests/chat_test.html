@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat and Presence Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .log { height: 300px; overflow-y: auto; background: #f0f0f0; padding: 10px; margin-bottom: 10px; font-family: monospace; white-space: pre-wrap; }
+        .flex { display: flex; gap: 20px; }
+        .col { flex: 1; border: 1px solid #ccc; padding: 10px;}
+        input, button { padding: 5px; margin: 2px; }
+    </style>
+</head>
+<body>
+    <h1>Chat & Presence Test</h1>
+    
+    <div class="flex">
+        <div class="col" id="user1">
+            <h2>User 1</h2>
+            <input type="email" id="email1" value="alice@test.com">
+            <input type="password" id="pass1" value="Password123!">
+            <button onclick="login(1)">Login</button>
+            <hr>
+            Workspace ID: <input type="text" id="ws1">
+            <button onclick="createWorkspace(1)">Create & Join WS</button>
+            <button onclick="joinWorkspace(1)">Join existing WS</button>
+            <button onclick="disconnect(1)">Disconnect</button>
+            <hr>
+            Channel ID: <input type="text" id="ch1">
+            <button onclick="createChannel(1)">Create Channel</button>
+            <button onclick="joinChannelRoom(1)">Join Channel</button><br>
+            <input type="text" id="msg1" placeholder="Message">
+            <button onclick="sendMessage(1)">Send</button>
+            <button onclick="sendTyping(1)">Typing...</button><br>
+            <button onclick="sendPresence(1, 'idle')">Idle</button>
+            <button onclick="sendPresence(1, 'online')">Online</button>
+            <div class="log" id="log1"></div>
+        </div>
+        
+        <div class="col" id="user2">
+            <h2>User 2</h2>
+            <input type="email" id="email2" value="bob@test.com">
+            <input type="password" id="pass2" value="Password123!">
+            <button onclick="login(2)">Login</button>
+            <hr>
+            Workspace ID: <input type="text" id="ws2">
+            <button onclick="joinWorkspace(2)">Join existing WS</button>
+            <button onclick="disconnect(2)">Disconnect</button>
+            <hr>
+            Channel ID: <input type="text" id="ch2">
+            <button onclick="joinChannelRoom(2)">Join Channel</button><br>
+            <input type="text" id="msg2" placeholder="Message">
+            <button onclick="sendMessage(2)">Send</button>
+            <button onclick="sendTyping(2)">Typing...</button><br>
+            <button onclick="sendPresence(2, 'idle')">Idle</button>
+            <button onclick="sendPresence(2, 'online')">Online</button>
+            <div class="log" id="log2"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://127.0.0.1:8000";
+        const tokens = { 1: null, 2: null };
+        const sockets = { 1: null, 2: null };
+        const heartbeats = { 1: null, 2: null };
+
+        function log(user, msg) {
+            const el = document.getElementById(`log${user}`);
+            el.textContent += msg + "\n";
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function login(user) {
+            const email = document.getElementById(`email${user}`).value;
+            const pass = document.getElementById(`pass${user}`).value;
+            
+            // Try signup first
+            let res = await fetch(`${API_BASE}/auth/signup`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, name: `User ${user}`, password: pass })
+            });
+            
+            if (res.status === 409 || res.status === 400) {
+                res = await fetch(`${API_BASE}/auth/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password: pass })
+                });
+            }
+            
+            const data = await res.json();
+            if (data.access_token) {
+                tokens[user] = data.access_token;
+                log(user, `Logged in successfully`);
+            } else {
+                log(user, `Login failed: ${JSON.stringify(data)}`);
+            }
+        }
+
+        async function createWorkspace(user) {
+            const res = await fetch(`${API_BASE}/workspaces`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${tokens[user]}`
+                },
+                body: JSON.stringify({ name: "Test WS " + Date.now() })
+            });
+            const data = await res.json();
+            document.getElementById(`ws${user}`).value = data.id;
+            document.getElementById(`ws2`).value = data.id; // autofill for user 2
+            log(user, `Created WS: ${data.id}`);
+            
+            // Invite user 2
+            const email2 = document.getElementById(`email2`).value;
+            await fetch(`${API_BASE}/workspaces/${data.id}/invite`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${tokens[user]}`
+                },
+                body: JSON.stringify({ email: email2, role: "MEMBER" })
+            });
+            log(user, `Invited ${email2}`);
+            
+            joinWorkspace(user);
+        }
+
+        function joinWorkspace(user) {
+            const wsId = document.getElementById(`ws${user}`).value;
+            if (!wsId) return alert("No workspace ID");
+            
+            const ws = new WebSocket(`ws://127.0.0.1:8000/realtime/ws?token=${tokens[user]}`);
+            sockets[user] = ws;
+            
+            ws.onopen = () => {
+                log(user, `WS Connected`);
+                ws.send(JSON.stringify({ type: "join_room", room_id: `workspace_${wsId}` }));
+                
+                // Start heartbeat
+                heartbeats[user] = setInterval(() => {
+                    ws.send(JSON.stringify({ type: "heartbeat", room_id: `workspace_${wsId}` }));
+                }, 15000);
+            };
+            
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type !== "ack") {
+                    log(user, `RECV: ${JSON.stringify(data)}`);
+                }
+            };
+            
+            ws.onclose = () => {
+                log(user, `WS Disconnected`);
+                clearInterval(heartbeats[user]);
+            };
+        }
+        
+        function disconnect(user) {
+            if (sockets[user]) {
+                sockets[user].close();
+            }
+        }
+
+        async function createChannel(user) {
+            const wsId = document.getElementById(`ws${user}`).value;
+            const res = await fetch(`${API_BASE}/workspaces/${wsId}/channels`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${tokens[user]}`
+                },
+                body: JSON.stringify({ name: "general_" + Date.now(), type: "PUBLIC" })
+            });
+            const data = await res.json();
+            if (data.id) {
+                document.getElementById(`ch${user}`).value = data.id;
+                document.getElementById(`ch2`).value = data.id;
+                log(user, `Created Channel: ${data.id}`);
+            } else {
+                log(user, `Channel create error: ${JSON.stringify(data)}`);
+            }
+        }
+        
+        function joinChannelRoom(user) {
+            const chId = document.getElementById(`ch${user}`).value;
+            if (sockets[user]) {
+                sockets[user].send(JSON.stringify({ type: "join_room", room_id: `channel_${chId}` }));
+                log(user, `Joined Channel Room: ${chId}`);
+            }
+        }
+
+        async function sendMessage(user) {
+            const chId = document.getElementById(`ch${user}`).value;
+            const content = document.getElementById(`msg${user}`).value;
+            if (!chId) {
+                log(user, "No channel ID! Make sure to create the channel first.");
+                return;
+            }
+                        
+            const res = await fetch(`${API_BASE}/channels/${chId}/messages`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${tokens[user]}`
+                },
+                body: JSON.stringify({ content })
+            });
+            const data = await res.json();
+            log(user, `Sent message via REST`);
+        }
+
+        function sendTyping(user) {
+            const chId = document.getElementById(`ch${user}`).value;
+            if (sockets[user]) {
+                sockets[user].send(JSON.stringify({ type: "typing_indicator", room_id: `channel_${chId}` }));
+                log(user, `Sent typing indicator`);
+            }
+        }
+
+        function sendPresence(user, status) {
+            const wsId = document.getElementById(`ws${user}`).value;
+            if (sockets[user]) {
+                sockets[user].send(JSON.stringify({ type: "presence_update", room_id: `workspace_${wsId}`, status: status }));
+                log(user, `Sent presence update: ${status}`);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+// Prisma schema for CollabSpace
+// Run: prisma db push  (dev)  |  prisma migrate dev (named migrations)
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Phase 1: Auth & Workspaces ─────────────────────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  avatarUrl      String?
+  passwordHash   String?   // null for OAuth-only accounts
+  googleId       String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  workspaceMembers WorkspaceMember[]
+  refreshTokens    RefreshToken[]
+  ownedWorkspaces  Workspace[]       @relation("WorkspaceOwner")
+  messages         Message[]
+  notifications    Notification[]    @relation("NotificationRecipient")
+  triggeredNotifs  Notification[]    @relation("NotificationActor")
+  documents        Document[]        @relation("DocumentCreator")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner    User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members  WorkspaceMember[]
+  channels Channel[]
+  documents Document[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String          @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole   @default(MEMBER)
+  joinedAt    DateTime        @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ─── Phase 3: Documents ──────────────────────────────────────────────────────
+
+model Document {
+  id          String   @id @default(cuid())
+  workspaceId String
+  creatorId   String
+  title       String   @default("Untitled")
+  content     String   @default("")  // current document content (plain text / JSON)
+  revision    Int      @default(0)   // OT revision counter
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace  Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator    User            @relation("DocumentCreator", fields: [creatorId], references: [id])
+  operations Operation[]
+  versions   DocumentVersion[]
+
+  @@map("documents")
+}
+
+model Operation {
+  id         String   @id @default(cuid())
+  documentId String
+  revision   Int      // revision this op was based on
+  ops        Json     // serialised OT operation list
+  authorId   String
+  appliedAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, revision])
+  @@map("operations")
+}
+
+model DocumentVersion {
+  id         String   @id @default(cuid())
+  documentId String
+  revision   Int
+  snapshot   String   // full content snapshot at this revision
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, revision])
+  @@map("document_versions")
+}
+
+// ─── Phase 4: Chat ───────────────────────────────────────────────────────────
+
+model Channel {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  type        ChannelType @default(PUBLIC)
+  createdAt   DateTime    @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@unique([workspaceId, name])
+  @@map("channels")
+}
+
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DIRECT
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  channelId String
+  authorId  String
+  content   String
+  editedAt  DateTime?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  channel   Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author    User              @relation(fields: [authorId], references: [id])
+  reactions MessageReaction[]
+
+  @@index([channelId, createdAt])
+  @@map("messages")
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@map("message_reactions")
+}
+
+// ─── Phase 5: Notifications ──────────────────────────────────────────────────
+
+model Notification {
+  id          String           @id @default(cuid())
+  recipientId String
+  actorId     String?
+  type        NotificationType
+  payload     Json             // flexible: { documentId, messageId, workspaceId, etc. }
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("NotificationActor", fields: [actorId], references: [id])
+
+  @@index([recipientId, readAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  MENTION
+  DOCUMENT_SHARED
+  TASK_ASSIGNED
+  WORKSPACE_INVITE
+}
