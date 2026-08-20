@@ -7,12 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
-
-# Copy source
+# Copy all backend source
 COPY . .
+
+# Install dependencies and project
+RUN pip install --no-cache-dir .
 
 # Generate Prisma client
 RUN prisma generate
