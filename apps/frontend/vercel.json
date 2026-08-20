@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://collabspace-backend-c26l.onrender.com/$1"
+    },
+    {
+      "source": "/realtime/(.*)",
+      "destination": "https://collabspace-backend-c26l.onrender.com/realtime/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
