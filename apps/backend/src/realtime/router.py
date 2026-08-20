@@ -33,6 +33,10 @@ async def websocket_endpoint(
     await websocket.accept()
     logger.info(f"User {user.email} (id: {user.id}) connected to WebSocket")
 
+    # Auto-join the user's personal room for notification delivery
+    user_room = f"user_{user.id}"
+    manager.active_connections[user_room].add(websocket)
+
     try:
         while True:
             # We expect JSON payloads in the format {"type": "...", "room_id": "...", "data": "..."}

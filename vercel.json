@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "buildCommand": "cd apps/frontend && npm install && npm run build",
+  "outputDirectory": "apps/frontend/dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://collabspace-backend.onrender.com/$1"
+    },
+    {
+      "source": "/ws/(.*)",
+      "destination": "https://collabspace-backend.onrender.com/ws/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

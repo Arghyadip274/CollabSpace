@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.auth.models import UserResponse
 from src.middleware.auth_middleware import get_current_user
+from src.notifications.service import emit_notification
 from src.workspaces import service
 from src.workspaces.models import (
     CreateWorkspaceRequest,
@@ -73,8 +74,17 @@ async def invite_member(
     current_user: UserResponse = Depends(get_current_user),
 ) -> WorkspaceMemberResponse:
     try:
-        return await service.invite_member(workspace_id, payload, current_user)
+        result = await service.invite_member(workspace_id, payload, current_user)
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    # Fire WORKSPACE_INVITE notification (non-blocking queue)
+    await emit_notification(
+        type="WORKSPACE_INVITE",
+        recipient_id=result.user_id,
+        actor_id=current_user.id,
+        payload={"workspaceId": workspace_id},
+    )
+    return result

@@ -7,6 +7,7 @@ import re
 from prisma.errors import UniqueViolationError
 
 from src.auth.models import UserResponse
+from src.cache import get_cached, invalidate, set_cached
 from src.database import db
 from src.workspaces.models import (
     CreateWorkspaceRequest,
@@ -96,9 +97,10 @@ async def get_workspace(
 ) -> WorkspaceResponse:
     """
     Fetch a workspace with its members.
+    Cache-aside: cached for 2 minutes. Invalidated on member changes.
     Raises ValueError if not found or user is not a member.
     """
-    # Verify membership
+    # Verify membership (not cached — security critical path)
     membership = await db.workspacemember.find_unique(
         where={
             "workspaceId_userId": {
@@ -110,6 +112,12 @@ async def get_workspace(
     if not membership:
         raise ValueError("Workspace not found or access denied.")
 
+    # Cache-aside for member list (2-min TTL)
+    cache_key = f"ws_members:{workspace_id}"
+    cached = await get_cached(cache_key)
+    if cached:
+        return WorkspaceResponse(**cached)
+
     workspace = await db.workspace.find_unique(where={"id": workspace_id})
     if not workspace:
         raise ValueError("Workspace not found.")
@@ -118,7 +126,9 @@ async def get_workspace(
         where={"workspaceId": workspace_id},
         include={"user": True},
     )
-    return _build_response(workspace, members)
+    result = _build_response(workspace, members)
+    await set_cached(cache_key, result.model_dump(), ttl=120)  # 2 minutes
+    return result
 
 
 async def invite_member(
@@ -167,6 +177,9 @@ async def invite_member(
             "role": payload.role,
         }
     )
+    # Invalidate the workspace member-list cache (write-invalidate pattern)
+    await invalidate(f"ws_members:{workspace_id}")
+
     return WorkspaceMemberResponse(
         user_id=member.userId,
         name=target_user.name,

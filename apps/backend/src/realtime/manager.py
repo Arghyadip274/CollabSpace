@@ -8,6 +8,7 @@ import redis.asyncio as aioredis
 
 from src.redis_client import get_redis
 from src.database import db
+from src.metrics import WS_CONNECTIONS, MESSAGES_PUBLISHED, ACTIVE_ROOMS
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,10 @@ class ConnectionManager:
         self.presence_monitor_task: asyncio.Task | None = None
 
     async def join_room(self, websocket: WebSocket, room_id: str):
+        if not self.active_connections[room_id]:
+            ACTIVE_ROOMS.inc()
         self.active_connections[room_id].add(websocket)
+        WS_CONNECTIONS.inc()
         logger.info(f"WebSocket {websocket.client} joined room {room_id}")
         
         updates = []
@@ -57,8 +61,10 @@ class ConnectionManager:
     def leave_room(self, websocket: WebSocket, room_id: str):
         if room_id in self.active_connections and websocket in self.active_connections[room_id]:
             self.active_connections[room_id].remove(websocket)
+            WS_CONNECTIONS.dec()
             if not self.active_connections[room_id]:
                 del self.active_connections[room_id]
+                ACTIVE_ROOMS.dec()
             logger.info(f"WebSocket {websocket.client} left room {room_id}")
 
     def disconnect_all(self, websocket: WebSocket):
@@ -67,10 +73,12 @@ class ConnectionManager:
         for room_id, conns in self.active_connections.items():
             if websocket in conns:
                 conns.remove(websocket)
+                WS_CONNECTIONS.dec()
                 if not conns:
                     empty_rooms.append(room_id)
         for room_id in empty_rooms:
             del self.active_connections[room_id]
+            ACTIVE_ROOMS.dec()
 
     async def _debounced_save(self, room_id: str):
         """Wait 2 seconds, then append pending updates to Postgres."""
@@ -100,6 +108,20 @@ class ConnectionManager:
             # Clear pending updates
             self.pending_updates[room_id] = []
             logger.info(f"Saved {len(updates_to_save)} updates for document {room_id} to DB")
+            
+            # Update embedding in background using the document title
+            async def _update_embedding(doc_id, text):
+                try:
+                    from src.ai.service import AIService
+                    embedding = await AIService.generate_embedding(text)
+                    emb_str = f"[{','.join(map(str, embedding))}]"
+                    await db.execute_raw(f"UPDATE documents SET embedding = '{emb_str}'::vector WHERE id = '{doc_id}'")
+                except Exception as e:
+                    logger.error(f"Failed to generate embedding for {doc_id}: {e}")
+            
+            title = doc_record.title if doc_record else "Untitled"
+            asyncio.create_task(_update_embedding(room_id, title))
+
         except asyncio.CancelledError:
             # Task was cancelled (because a new update came in)
             pass
@@ -136,6 +158,7 @@ class ConnectionManager:
         redis = get_redis()
         # Publish to room channel
         await redis.publish(f"room:{room_id}", json.dumps(message))
+        MESSAGES_PUBLISHED.inc()
 
     async def start_redis_listener(self):
         """Background task that listens to Redis Pub/Sub for room messages."""

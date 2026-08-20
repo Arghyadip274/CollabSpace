@@ -5,11 +5,13 @@ generator client {
   provider             = "prisma-client-py"
   interface            = "asyncio"
   recursive_type_depth = 5
+  previewFeatures      = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 // ─── Phase 1: Auth & Workspaces ─────────────────────────────────────────────
@@ -32,6 +34,7 @@ model User {
   notifications    Notification[]    @relation("NotificationRecipient")
   triggeredNotifs  Notification[]    @relation("NotificationActor")
   documents        Document[]        @relation("DocumentCreator")
+  tasks            Task[]            @relation("TaskAssignee")
 
   @@map("users")
 }
@@ -62,6 +65,7 @@ model Workspace {
   members  WorkspaceMember[]
   channels Channel[]
   documents Document[]
+  tasks     Task[]
 
   @@map("workspaces")
 }
@@ -95,6 +99,7 @@ model Document {
   title       String   @default("Untitled")
   content     String   @default("")  // current document content (plain text / JSON)
   revision    Int      @default(0)   // OT revision counter
+  embedding   Unsupported("vector(768)")?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -160,6 +165,7 @@ model Message {
   channelId String
   authorId  String
   content   String
+  embedding Unsupported("vector(768)")?
   editedAt  DateTime?
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -208,4 +214,24 @@ enum NotificationType {
   DOCUMENT_SHARED
   TASK_ASSIGNED
   WORKSPACE_INVITE
+}
+
+// ─── Phase 6: Tasks ──────────────────────────────────────────────────────────
+
+model Task {
+  id          String    @id @default(cuid())
+  workspaceId String
+  description String
+  assigneeId  String?
+  dueDate     DateTime?
+  sourceUrl   String?   // e.g., link to document or message
+  isCompleted Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignee  User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  @@index([workspaceId, isCompleted])
+  @@map("tasks")
 }

@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: collabspace-backend
+    env: docker
+    region: oregon
+    plan: free
+    dockerContext: apps/backend
+    dockerfilePath: apps/backend/Dockerfile
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: collabspace-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: collabspace-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+
+  - type: redis
+    name: collabspace-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: collabspace-postgres
+    region: oregon
+    plan: free
+    databaseName: collabspacedb
+    user: collabspace

@@ -60,7 +60,7 @@ async def signup(payload: SignupRequest, response: Response) -> AuthResponse:
     "/login",
     response_model=AuthResponse,
     summary="Authenticate and receive tokens",
-    dependencies=[Depends(rate_limit(max_requests=5, window_seconds=60, key_prefix="login"))],
+    dependencies=[Depends(rate_limit(max_requests=100, window_seconds=60, key_prefix="login"))],
 )
 async def login(payload: LoginRequest, response: Response) -> AuthResponse:
     try:

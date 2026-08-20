@@ -37,12 +37,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Backend (FastAPI) ──────────────────────────────────────────────────────
-  backend:
+  # ─── Backend 1 (FastAPI) ────────────────────────────────────────────────────
+  backend1:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
-    container_name: collabspace_backend
+    container_name: collabspace_backend1
     restart: unless-stopped
     env_file:
       - .env
@@ -50,7 +50,30 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
     ports:
-      - "8000:8000"
+      - "8001:8000"
+    volumes:
+      - ./apps/backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ─── Backend 2 (FastAPI) ────────────────────────────────────────────────────
+  backend2:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: collabspace_backend2
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    ports:
+      - "8002:8000"
     volumes:
       - ./apps/backend:/app
     depends_on:
@@ -82,14 +105,12 @@ services:
     container_name: collabspace_nginx
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8000:80"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - backend
-      - frontend
-    profiles:
-      - prod  # only starts with: docker-compose --profile prod up
+      - backend1
+      - backend2
 
 volumes:
   postgres_data:

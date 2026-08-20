@@ -38,6 +38,7 @@ dependencies = [
 
     # ─── Utilities ────────────────────────────────────────────────
     "structlog>=24.2.0",
+    "prometheus-client>=0.20.0",
 ]
 
 [project.optional-dependencies]
