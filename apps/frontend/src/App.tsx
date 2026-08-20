@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { 
   Sparkles, 
   MessageSquare, 
@@ -17,8 +17,12 @@ import {
   Copy,
   ArrowUp,
   ArrowDown,
-  Save
+  Save,
+  Users,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
+import { useCollaborativeDoc } from './hooks/useCollaborativeDoc';
 
 function App() {
   // Navigation & Auth States
@@ -33,10 +37,13 @@ function App() {
   const [workspaceName] = useState<string>('Engineering Core');
   const [docId, setDocId] = useState<string>('');
   const [docTitle] = useState<string>('Product Roadmap 2026');
-  const [docContent, setDocContent] = useState<string>('Welcome to CollabSpace! Start editing this collaborative document synchronously across clients...');
-  const [saveStatus, setSaveStatus] = useState<string>('Saved');
+  const [joinDocId, setJoinDocId] = useState<string>('');
   const [channelId, setChannelId] = useState<string>('');
   const [channelName, setChannelName] = useState<string>('general');
+
+  // Real-time collaborative doc hook (Yjs over WebSocket)
+  const { docText, setDocText, wsStatus, onlineCount, manualSave, saveStatus, setSaveStatus } =
+    useCollaborativeDoc(docId, workspaceId, token);
 
   // Real-time Chat States
   const [messages, setMessages] = useState<any[]>([]);
@@ -70,44 +77,7 @@ function App() {
     setTimeout(() => setStatusMsg(''), 4000);
   };
 
-  // Auto-save logic
-  useEffect(() => {
-    if (!docId || !token || !workspaceId) return;
-    
-    // Ignore the very first render if it hasn't been edited manually, but it's simpler just to save.
-    setSaveStatus('Unsaved changes');
-    
-    const timer = setTimeout(async () => {
-      setSaveStatus('Saving...');
-      try {
-        await fetch(`/api/documents/${workspaceId}/${docId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ content: docContent })
-        });
-        setSaveStatus('Saved');
-      } catch (e) {
-        setSaveStatus('Error saving');
-      }
-    }, 1000);
-    
-    return () => clearTimeout(timer);
-  }, [docContent, docId, token, workspaceId]);
-
-  const handleManualSave = async () => {
-    if (!docId || !token || !workspaceId) return;
-    setSaveStatus('Saving...');
-    try {
-      await fetch(`/api/documents/${workspaceId}/${docId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ content: docContent })
-      });
-      setSaveStatus('Saved');
-    } catch(e) {
-      setSaveStatus('Error saving');
-    }
-  };
+  // handleManualSave comes from useCollaborativeDoc hook
 
   // Quick Demo Setup
   const handleQuickDemo = async () => {
@@ -240,7 +210,7 @@ function App() {
       const res = await fetch(`/api/ai/document/${docId}/summarize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ content: docContent })
+        body: JSON.stringify({ content: docText })
       });
       const data = await res.json();
       setDocSummary(data.summary || 'Summary generated successfully.');
@@ -533,14 +503,37 @@ function App() {
                   <h3 style={{ fontSize: '18px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Layers size={20} color="#34D399" /> Provision Workspace Resources
                   </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                     <div>
                       <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Workspace ID</label>
                       <input className="input-field" value={workspaceId} readOnly placeholder="Created on setup..." />
                     </div>
                     <div>
-                      <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Document ID</label>
+                      <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Document ID (yours)</label>
                       <input className="input-field" value={docId} readOnly placeholder="Created on setup..." />
+                    </div>
+                  </div>
+
+                  {/* Join another user's document */}
+                  <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600 }}>
+                      🔗 Join a Colleague's Document (Paste their Doc ID below to collaborate live)
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        className="input-field"
+                        value={joinDocId}
+                        onChange={e => setJoinDocId(e.target.value)}
+                        placeholder="Paste Document ID here..."
+                      />
+                      <button
+                        className="btn-primary"
+                        style={{ whiteSpace: 'nowrap' }}
+                        disabled={!joinDocId.trim()}
+                        onClick={() => { setDocId(joinDocId.trim()); setActiveTab('editor'); }}
+                      >
+                        Join Doc
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -556,8 +549,19 @@ function App() {
                   <h2 className="font-heading" style={{ fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <FileText color="#818CF8" /> {docTitle}
                   </h2>
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                    <span>CRDT Engine: Yjs</span> • <span>Debounced Save: 2s inactivity</span>
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '12px', color: 'var(--text-muted)', alignItems: 'center' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {wsStatus === 'Live'
+                        ? <Wifi size={12} color="#34D399" />
+                        : <WifiOff size={12} color="#ef4444" />}
+                      <span style={{ color: wsStatus === 'Live' ? '#34D399' : '#ef4444', fontWeight: 600 }}>{wsStatus}</span>
+                    </span>
+                    <span>•</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Users size={12} color="#818CF8" /> {onlineCount} online
+                    </span>
+                    <span>•</span>
+                    <span>CRDT: Yjs</span>
                   </div>
                 </div>
 
@@ -577,10 +581,10 @@ function App() {
                       <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => { navigator.clipboard.writeText(docSummary); showStatus("Copied to clipboard!"); }}>
                         <Copy size={14} /> Copy
                       </button>
-                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setDocContent(prev => docSummary + '\n\n' + prev)}>
+                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setDocText(docSummary + '\n\n' + docText)}>
                         <ArrowUp size={14} /> Insert Top
                       </button>
-                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setDocContent(prev => prev + '\n\n' + docSummary)}>
+                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setDocText(docText + '\n\n' + docSummary)}>
                         <ArrowDown size={14} /> Insert Bottom
                       </button>
                     </div>
@@ -599,7 +603,7 @@ function App() {
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={handleManualSave}>
+                    <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={manualSave}>
                       <Save size={14} /> Save Now
                     </button>
                     <div style={{ fontSize: '12px', color: 'var(--text-dim)', alignSelf: 'center' }}>ID: {docId}</div>
@@ -609,9 +613,9 @@ function App() {
                 <textarea 
                   className="input-field" 
                   style={{ flex: 1, minHeight: '300px', fontFamily: 'monospace', fontSize: '14px', lineHeight: '1.6', resize: 'vertical' }}
-                  value={docContent}
-                  onChange={e => setDocContent(e.target.value)}
-                  placeholder="Type document content here..."
+                  value={docText}
+                  onChange={e => setDocText(e.target.value)}
+                  placeholder="Type document content here... Open a second tab and join this document to see live collaboration!"
                 />
               </div>
             </div>

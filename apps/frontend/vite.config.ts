@@ -19,6 +19,12 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
+      // Proxy native WebSocket to backend
+      '/realtime/ws': {
+        target: 'http://localhost:8000',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
   resolve: {
