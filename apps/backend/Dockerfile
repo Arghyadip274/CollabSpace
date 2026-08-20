@@ -18,4 +18,4 @@ RUN prisma generate
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "prisma db push && uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+CMD ["sh", "-c", "prisma db push --accept-data-loss && uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2"]
