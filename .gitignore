@@ -26,6 +26,9 @@ dist/
 
 # Build artifacts
 apps/frontend/dist/
+apps/backend/build/
+*.egg-info/
+*.tsbuildinfo
 
 # Editor
 .vscode/
