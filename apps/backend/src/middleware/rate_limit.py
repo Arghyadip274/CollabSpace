@@ -21,11 +21,20 @@ from fastapi import Depends, HTTPException, Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from src.config import settings
 from src.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
 RATE_LIMIT_KEY_PREFIX = "rl:"
+
+
+def _bypass_requested(request: Request) -> bool:
+    """Test-only escape hatch; never honoured in production."""
+    return (
+        settings.app_env != "production"
+        and request.headers.get("x-test-bypass-ratelimit") == "1"
+    )
 
 # ─── Route tiers (path prefix → (max_requests, window_seconds)) ────────────
 ROUTE_TIERS: list[tuple[str, int, int]] = [
@@ -96,7 +105,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         
         # Skip rate limiting in test environment
-        if request.headers.get("x-test-bypass-ratelimit") == "1":
+        if _bypass_requested(request):
             return await call_next(request)
 
         key = f"global:{path.split('/')[1]}:{client_ip}"  # e.g. "global:auth:1.2.3.4"
@@ -132,7 +141,7 @@ def rate_limit(max_requests: int = 5, window_seconds: int = 60, key_prefix: str 
         request: Request,
         redis: aioredis.Redis = Depends(get_redis),
     ) -> None:
-        if request.headers.get("x-test-bypass-ratelimit") == "1":
+        if _bypass_requested(request):
             return
             
         client_ip = request.client.host if request.client else "unknown"

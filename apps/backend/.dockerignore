@@ -1,0 +1,38 @@
+# Secrets and local configuration — never bake these into an image
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# VCS and editor metadata
+.git
+.gitignore
+.vscode
+.idea
+
+# Local virtualenvs and caches
+venv
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Generated build artifacts
+build
+dist
+*.egg-info
+
+# Not needed at runtime
+tests
+pytest.ini
+get_tokens.py
+*.log
+
+# The build recipe itself
+Dockerfile
+.dockerignore

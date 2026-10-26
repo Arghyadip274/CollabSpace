@@ -38,7 +38,7 @@ graph TD
 ### Local Development (Docker Compose)
 This project uses Docker Compose to easily spin up a multi-node backend, NGINX load balancer, PostgreSQL, and Redis locally.
 
-1. Create a `.env` file in the `apps/backend` directory based on `.env.example`. Make sure you provide a valid `GEMINI_API_KEY`.
+1. Create a `.env` file in the repository root based on `.env.example`. Make sure you provide a valid `GEMINI_API_KEY`.
 2. Ensure you have Docker and Docker Compose installed.
 3. Run the stack:
    ```bash
