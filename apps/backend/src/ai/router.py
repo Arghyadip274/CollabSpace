@@ -51,7 +51,11 @@ async def summarize_document(
             try:
                 embedding = await AIService.generate_embedding(text)
                 emb_str = f"[{','.join(map(str, embedding))}]"
-                await db.execute_raw(f"UPDATE documents SET embedding = '{emb_str}'::vector WHERE id = '{d_id}'")
+                await db.execute_raw(
+                    "UPDATE documents SET embedding = $1::vector WHERE id = $2",
+                    emb_str,
+                    d_id,
+                )
             except Exception:
                 pass
                 
@@ -208,22 +212,32 @@ async def semantic_search(
     # Run raw SQL to find closest documents (cosine distance <=>)
     # Cast emb_str to vector
     
-    docs = await db.query_raw(f"""
-        SELECT id, title, content, 1 - (embedding <=> '{emb_str}'::vector) as similarity
+    docs = await db.query_raw(
+        """
+        SELECT id, title, content, 1 - (embedding <=> $1::vector) as similarity
         FROM documents
-        WHERE "workspaceId" = '{req.workspace_id}' AND embedding IS NOT NULL
-        ORDER BY embedding <=> '{emb_str}'::vector
-        LIMIT {req.limit}
-    """)
-    
-    msgs = await db.query_raw(f"""
-        SELECT m.id, m.content, c.name as channel_name, 1 - (m.embedding <=> '{emb_str}'::vector) as similarity
+        WHERE "workspaceId" = $2 AND embedding IS NOT NULL
+        ORDER BY embedding <=> $1::vector
+        LIMIT $3
+        """,
+        emb_str,
+        req.workspace_id,
+        req.limit,
+    )
+
+    msgs = await db.query_raw(
+        """
+        SELECT m.id, m.content, c.name as channel_name, 1 - (m.embedding <=> $1::vector) as similarity
         FROM messages m
         JOIN channels c ON m."channelId" = c.id
-        WHERE c."workspaceId" = '{req.workspace_id}' AND m.embedding IS NOT NULL
-        ORDER BY m.embedding <=> '{emb_str}'::vector
-        LIMIT {req.limit}
-    """)
+        WHERE c."workspaceId" = $2 AND m.embedding IS NOT NULL
+        ORDER BY m.embedding <=> $1::vector
+        LIMIT $3
+        """,
+        emb_str,
+        req.workspace_id,
+        req.limit,
+    )
     
     return {
         "documents": [dict(d) for d in docs] if docs else [],

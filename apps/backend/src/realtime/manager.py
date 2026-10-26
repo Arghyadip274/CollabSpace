@@ -115,7 +115,11 @@ class ConnectionManager:
                     from src.ai.service import AIService
                     embedding = await AIService.generate_embedding(text)
                     emb_str = f"[{','.join(map(str, embedding))}]"
-                    await db.execute_raw(f"UPDATE documents SET embedding = '{emb_str}'::vector WHERE id = '{doc_id}'")
+                    await db.execute_raw(
+                        "UPDATE documents SET embedding = $1::vector WHERE id = $2",
+                        emb_str,
+                        doc_id,
+                    )
                 except Exception as e:
                     logger.error(f"Failed to generate embedding for {doc_id}: {e}")
             

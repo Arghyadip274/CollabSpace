@@ -128,7 +128,11 @@ async def update_document(
             try:
                 embedding = await AIService.generate_embedding(text)
                 emb_str = f"[{','.join(map(str, embedding))}]"
-                await db.execute_raw(f"UPDATE documents SET embedding = '{emb_str}'::vector WHERE id = '{d_id}'")
+                await db.execute_raw(
+                    "UPDATE documents SET embedding = $1::vector WHERE id = $2",
+                    emb_str,
+                    d_id,
+                )
             except Exception as e:
                 log.error("failed_to_generate_document_embedding", error=str(e))
                 

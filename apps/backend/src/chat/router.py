@@ -106,7 +106,11 @@ async def send_message(
             from src.ai.service import AIService
             embedding = await AIService.generate_embedding(text)
             emb_str = f"[{','.join(map(str, embedding))}]"
-            await db.execute_raw(f"UPDATE messages SET embedding = '{emb_str}'::vector WHERE id = '{msg_id}'")
+            await db.execute_raw(
+                "UPDATE messages SET embedding = $1::vector WHERE id = $2",
+                emb_str,
+                msg_id,
+            )
         except Exception as e:
             import structlog
             structlog.get_logger().error("failed_to_generate_message_embedding", error=str(e))
