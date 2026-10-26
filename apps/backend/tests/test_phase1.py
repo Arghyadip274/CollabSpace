@@ -34,6 +34,7 @@ async def client():
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
+        headers={"x-test-bypass-ratelimit": "1"},  # bypass global rate limiter in tests
     ) as ac:
         yield ac
 

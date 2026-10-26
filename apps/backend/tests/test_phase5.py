@@ -20,6 +20,23 @@ async def setup_db_and_redis():
     await close_redis()
     await disconnect_db()
 
+
+@pytest_asyncio.fixture(autouse=True)
+async def isolated_notification_queue(setup_db_and_redis, monkeypatch):
+    """
+    Give each test its own queue key so leftover events (from earlier runs or
+    other tests) in the shared dev Redis cannot be popped in place of this
+    test's own events. Only this test's key is deleted — never FLUSHDB/FLUSHALL.
+    """
+    import src.notifications.service as notification_service
+    from src.redis_client import get_redis
+
+    key = f"test:{notification_service.NOTIFICATION_QUEUE}:{uuid.uuid4().hex}"
+    monkeypatch.setattr(notification_service, "NOTIFICATION_QUEUE", key)
+    yield key
+    await get_redis().delete(key)
+
+
 async def process_notification_queue():
     """Helper to process a single item from the queue synchronously in tests."""
     from src.notifications.service import worker, NOTIFICATION_QUEUE

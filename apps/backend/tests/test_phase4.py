@@ -24,7 +24,11 @@ def auth_headers():
 
 @pytest.mark.asyncio
 async def test_chat_rest_api():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"x-test-bypass-ratelimit": "1"},  # bypass global rate limiter in tests
+    ) as ac:
         # 1. Setup a user and a workspace
         email = unique_email("chatuser")
         res_signup = await ac.post("/auth/signup", json={
