@@ -17,6 +17,10 @@ from src.main import app
 from src.database import connect_db, disconnect_db
 from src.redis_client import init_redis, close_redis
 
+# per-test notification queue key (see conftest.py): the invite test emits a
+# WORKSPACE_INVITE that nothing consumes
+pytestmark = pytest.mark.usefixtures("isolated_notification_queue")
+
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db_and_redis():
